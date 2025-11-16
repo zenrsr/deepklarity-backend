@@ -1,0 +1,12 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==1.10.13
+python-multipart==0.0.6
+beautifulsoup4==4.12.2
+requests==2.31.0
+python-dotenv==1.0.0
+httpx==0.25.2
+lxml==4.9.3
+newspaper3k==0.2.8
+nltk==3.8.1
+aiohttp==3.9.1
