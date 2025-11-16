@@ -3,7 +3,6 @@ from typing import Dict, List, Optional, Any
 import logging
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.prompts import PromptTemplate
-from langchain.chains.llm import LLMChain
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 import json
@@ -64,7 +63,28 @@ class LLMService:
             partial_variables={"format_instructions": self.parser.get_format_instructions()}
         )
         
-        self.chain = LLMChain(llm=self.llm, prompt=self.quiz_prompt)
+    def _invoke_llm(self, title: str, content: str, question_count: int, difficulty_distribution: Dict[str, int]) -> str:
+        prompt_text = self.quiz_prompt.format(
+            title=title,
+            content=content,
+            question_count=question_count,
+            difficulty_distribution=str(difficulty_distribution)
+        )
+        response = self.llm.invoke(prompt_text)
+        if isinstance(response, str):
+            return response
+        content = getattr(response, "content", None)
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            pieces = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    pieces.append(item.get("text", ""))
+                elif isinstance(item, str):
+                    pieces.append(item)
+            return "".join(pieces)
+        return str(response)
     
     def generate_quiz(self, title: str, content: str, question_count: int = 8, 
                      difficulty_distribution: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
@@ -118,23 +138,21 @@ class LLMService:
             
             for attempt in range(max_retries):
                 try:
-                    response = self.chain.run(
+                    response_text = self._invoke_llm(
                         title=title,
                         content=content,
                         question_count=question_count,
-                        difficulty_distribution=str(difficulty_distribution)
+                        difficulty_distribution=difficulty_distribution
                     )
-                    
                     try:
-                        parsed_response = self.parser.parse(response)
+                        parsed_response = self.parser.parse(response_text)
                         quiz_data = parsed_response.dict()
                         break
                     except Exception as parse_error:
                         logger.warning(f"Parser failed on attempt {attempt + 1}, trying manual JSON extraction: {parse_error}")
-                        quiz_data = self._extract_json_manually(response)
+                        quiz_data = self._extract_json_manually(response_text)
                         if quiz_data and len(quiz_data.get('questions', [])) > 0:
                             break
-                        
                 except Exception as llm_error:
                     logger.warning(f"LLM generation failed on attempt {attempt + 1}: {llm_error}")
                     if attempt == max_retries - 1:
